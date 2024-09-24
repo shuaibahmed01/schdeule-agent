@@ -76,4 +76,6 @@ class ScheduleOptimizationAgent:
 
     def _format_treatment_plans(self, treatment_plans: List[Dict]) -> str:
         """Format treatment plans for the prompt."""
-        return "\n".join([f"- {plan['name']}: ${plan['cost']}" for plan in treatment_plans])
+        plan = "\n".join([f"- {plan['name']}: ${plan['cost']}" for plan in treatment_plans])
+        print(plan)
+        return plan
