@@ -47,8 +47,7 @@ def test_optimize_schedule_locally():
     print(json.dumps(result, indent=2))
 
 if __name__ == '__main__':
-    # Uncomment the line below to run the local test
-    # test_optimize_schedule_locally()
+    test_optimize_schedule_locally()
     
     # Comment out the line below if you want to run the local test instead of starting the Flask server
-    app.run(debug=True)
+    # app.run(debug=True)
