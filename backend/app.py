@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from backend.agent import ScheduleOptimizationAgent
+from agent import ScheduleOptimizationAgent
 import os
 from dotenv import load_dotenv
 import json
