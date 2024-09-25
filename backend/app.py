@@ -10,16 +10,16 @@ app = Flask(__name__)
 
 # Example treatment plans for testing
 example_treatment_plans = [
-    {"name": "Basic Checkup", "cost": 100},
-    {"name": "Dental Cleaning", "cost": 150},
-    {"name": "Cavity Filling", "cost": 200},
-    {"name": "Root Canal", "cost": 800},
-    {"name": "Tooth Extraction", "cost": 250},
-    {"name": "Dental Crown", "cost": 1000},
-    {"name": "Teeth Whitening", "cost": 300},
-    {"name": "Dental Implant", "cost": 3000},
-    {"name": "Orthodontic Consultation", "cost": 150},
-    {"name": "Wisdom Tooth Removal", "cost": 450}
+    {"id": 1, "name": "Basic Checkup", "cost": 100},
+    {"id": 1, "name": "Dental Cleaning", "cost": 150},
+    {"id": 1, "name": "Cavity Filling", "cost": 200},
+    {"id": 2, "name": "Root Canal", "cost": 800},
+    {"id": 2, "name": "Tooth Extraction", "cost": 250},
+    {"id": 2, "name": "Dental Crown", "cost": 1000},
+    {"id": 3, "name": "Teeth Whitening", "cost": 300},
+    {"id": 3, "name": "Dental Implant", "cost": 3000},
+    {"id": 4, "name": "Orthodontic Consultation", "cost": 150},
+    {"id": 4, "name": "Wisdom Tooth Removal", "cost": 450}
 ]
 
 @app.route('/optimize_schedule', methods=['POST'])
@@ -37,7 +37,7 @@ def api_optimize_schedule():
 
 def test_optimize_schedule_locally():
     revenue_target = 5000
-    num_slots = 8
+    num_slots = 10  # Increased to match the number of example treatments
 
     api_key = os.getenv('ANTHROPIC_API_KEY')
     
