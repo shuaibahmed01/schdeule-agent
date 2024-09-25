@@ -46,6 +46,12 @@ def test_optimize_schedule_locally():
     print("Optimization Result:")
     print(json.dumps(result, indent=2))
 
+    # Output the result to a JSON file
+    output_file = 'optimized_schedule.json'
+    with open(output_file, 'w') as f:
+        json.dump(result, f, indent=2)
+    print(f"Optimized schedule has been saved to {output_file}")
+
 if __name__ == '__main__':
     test_optimize_schedule_locally()
     
