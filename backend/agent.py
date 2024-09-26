@@ -4,7 +4,8 @@ from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Dict
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
+from example_input import NEXT_MONTH_WEEKDAYS
 
 class ScheduledTreatment(BaseModel):
     date: str = Field(description="Date of the treatment in YYYY-MM-DD format")
@@ -25,22 +26,61 @@ class ScheduleOptimizationAgent:
 
     def optimize_schedule(self, treatment_plans: List[Dict], revenue_target: float, num_slots: int) -> Dict:
         """Optimize the doctor's schedule using Claude-3.5-sonnet."""
-        prompt = self._create_prompt(treatment_plans, revenue_target, num_slots)
-        response = self._get_claude_response(prompt)
-        return self._parse_response(response)
+        chunk_size = 50  # Process 50 appointments at a time
+        schedule = []
+        total_revenue = 0
+        available_dates = NEXT_MONTH_WEEKDAYS.copy()
 
-    def _create_prompt(self, treatment_plans: List[Dict], revenue_target: float, num_slots: int) -> str:
+        for i in range(0, len(treatment_plans), chunk_size):
+            chunk = treatment_plans[i:i+chunk_size]
+            chunk_slots = min(num_slots - len(schedule), chunk_size)
+            
+            if chunk_slots <= 0:
+                break
+
+            prompt = self._create_prompt(chunk, revenue_target - total_revenue, chunk_slots, available_dates)
+            response = self._get_claude_response(prompt)
+            chunk_result = self._parse_response(response)
+
+            if "error" in chunk_result:
+                print(f"Error in chunk {i//chunk_size + 1}: {chunk_result['error']}")
+                continue
+
+            valid_treatments = [t for t in chunk_result['schedule'] if self._is_valid_treatment(t)]
+            schedule.extend(valid_treatments)
+            total_revenue += sum(t.cost for t in valid_treatments)
+
+            # Update available dates
+            used_dates = set(t.date for t in valid_treatments)
+            available_dates = [date for date in available_dates if date not in used_dates]
+
+        revenue_target_met = total_revenue >= revenue_target
+        analysis = f"Scheduled {len(schedule)} appointments. Total revenue: ${total_revenue:.2f}. Target {'met' if revenue_target_met else 'not met'}."
+
+        return {
+            "schedule": [treatment.dict() for treatment in schedule],
+            "total_revenue": total_revenue,
+            "revenue_target_met": revenue_target_met,
+            "analysis": analysis
+        }
+
+    def _is_valid_treatment(self, treatment: ScheduledTreatment) -> bool:
+        """Check if a treatment has all required fields."""
+        return all([treatment.date, treatment.treatment, treatment.patient_id, treatment.cost])
+
+    def _create_prompt(self, treatment_plans: List[Dict], revenue_target: float, num_slots: int, available_dates: List[str]) -> str:
         """Create a detailed prompt for the Claude model."""
         formatted_plans = self._format_treatment_plans(treatment_plans)
-        start_date = datetime.now().strftime("%Y-%m-%d")
-        template = """As an AI scheduling assistant specializing in healthcare optimization, your task is to create an optimal schedule for a doctor based on the following parameters:
+        formatted_dates = ", ".join(available_dates)
+        template = """
+        As an AI scheduling assistant specializing in healthcare optimization, your task is to create an optimal schedule for a doctor based on the following parameters:
 
         Treatment Plans:
         {formatted_plans}
 
         Revenue Target: ${revenue_target}
         Number of Available Slots: {num_slots}
-        Start Date: {start_date}
+        Available Dates: {formatted_dates}
 
         Objective:
         Create a schedule that maximizes revenue while meeting or exceeding the revenue target. Consider the following factors:
@@ -48,7 +88,7 @@ class ScheduleOptimizationAgent:
         2. Ensure a balanced mix of treatments to avoid overbooking any single type.
         3. If the revenue target can't be met, get as close as possible.
         4. Spread out treatments for each patient (identified by patient_id) so they don't have multiple appointments on the same day.
-        5. Assign each treatment to a specific date, starting from the given start date and using weekdays only.
+        5. Assign each treatment to a specific date from the available dates provided.
 
         Instructions:
         1. Analyze the treatment plans and their costs.
@@ -59,7 +99,7 @@ class ScheduleOptimizationAgent:
 
         {format_instructions}
 
-        Ensure that the "schedule" list contains exactly {num_slots} treatments, each with a unique date (weekdays only).
+        Ensure that the "schedule" list contains exactly {num_slots} treatments, each with a unique date from the available dates.
 
         Remember, you are an AI assistant focused on optimizing healthcare schedules. Provide your best solution based on the given constraints and objectives.
         """
@@ -70,7 +110,7 @@ class ScheduleOptimizationAgent:
             formatted_plans=formatted_plans,
             revenue_target=revenue_target,
             num_slots=num_slots,
-            start_date=start_date,
+            formatted_dates=formatted_dates,
             format_instructions=self.output_parser.get_format_instructions()
         )
 

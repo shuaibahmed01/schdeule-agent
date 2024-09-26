@@ -3,24 +3,11 @@ from agent import ScheduleOptimizationAgent
 import os
 from dotenv import load_dotenv
 import json
+from example_input import EXAMPLE_TREATMENT_PLANS, NUM_SLOTS
 
 load_dotenv()
 
 app = Flask(__name__)
-
-# Example treatment plans for testing
-example_treatment_plans = [
-    {"id": 1, "name": "Basic Checkup", "cost": 100},
-    {"id": 1, "name": "Dental Cleaning", "cost": 150},
-    {"id": 1, "name": "Cavity Filling", "cost": 200},
-    {"id": 2, "name": "Root Canal", "cost": 800},
-    {"id": 2, "name": "Tooth Extraction", "cost": 250},
-    {"id": 2, "name": "Dental Crown", "cost": 1000},
-    {"id": 3, "name": "Teeth Whitening", "cost": 300},
-    {"id": 3, "name": "Dental Implant", "cost": 3000},
-    {"id": 4, "name": "Orthodontic Consultation", "cost": 150},
-    {"id": 4, "name": "Wisdom Tooth Removal", "cost": 450}
-]
 
 @app.route('/optimize_schedule', methods=['POST'])
 def api_optimize_schedule():
@@ -36,21 +23,28 @@ def api_optimize_schedule():
     return jsonify(result)
 
 def test_optimize_schedule_locally():
-    revenue_target = 5000
-    num_slots = 10  # Increased to match the number of example treatments
+    revenue_target = 500000  # Increased revenue target for the larger scale
+    num_slots = NUM_SLOTS  # Use the fixed number of slots (720)
 
     api_key = os.getenv('ANTHROPIC_API_KEY')
     
     agent = ScheduleOptimizationAgent(api_key=api_key)
-    result = agent.optimize_schedule(example_treatment_plans, revenue_target, num_slots)
-    print("Optimization Result:")
-    print(json.dumps(result, indent=2))
+    result = agent.optimize_schedule(EXAMPLE_TREATMENT_PLANS, revenue_target, num_slots)
+    
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print("Optimization Result:")
+        print(f"Total appointments scheduled: {len(result['schedule'])}")
+        print(f"Total revenue: ${result['total_revenue']:.2f}")
+        print(f"Revenue target met: {result['revenue_target_met']}")
+        print(f"Analysis: {result['analysis']}")
 
-    # Output the result to a JSON file
-    output_file = 'optimized_schedule.json'
-    with open(output_file, 'w') as f:
-        json.dump(result, f, indent=2)
-    print(f"Optimized schedule has been saved to {output_file}")
+        # Output the result to a JSON file
+        output_file = 'optimized_schedule.json'
+        with open(output_file, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"Optimized schedule has been saved to {output_file}")
 
 if __name__ == '__main__':
     test_optimize_schedule_locally()
