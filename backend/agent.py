@@ -24,82 +24,65 @@ class ScheduleOptimizationAgent:
         self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", anthropic_api_key=api_key)
         self.output_parser = PydanticOutputParser(pydantic_object=ScheduleOutput)
 
-    def optimize_schedule(self, treatment_plans: List[Dict], revenue_target: float, num_slots: int) -> Dict:
+    def optimize_schedule(self, partial_schedule: List[Dict], treatment_plans: List[Dict], revenue_target: float) -> Dict:
         """Optimize the doctor's schedule using Claude-3.5-sonnet."""
-        chunk_size = 50  # Process 50 appointments at a time
-        schedule = []
-        total_revenue = 0
-        available_dates = NEXT_MONTH_WEEKDAYS.copy()
+        available_slots = self._get_available_slots(partial_schedule)
+        prompt = self._create_prompt(partial_schedule, treatment_plans, revenue_target, available_slots)
+        response = self._get_claude_response(prompt)
+        return self._parse_response(response)
 
-        for i in range(0, len(treatment_plans), chunk_size):
-            chunk = treatment_plans[i:i+chunk_size]
-            chunk_slots = min(num_slots - len(schedule), chunk_size)
-            
-            if chunk_slots <= 0:
-                break
+    def _get_available_slots(self, partial_schedule: List[Dict]) -> Dict[str, int]:
+        """Calculate available slots for each weekday in the next month."""
+        today = datetime.now().date()
+        end_date = today + timedelta(days=30)
+        date_range = [today + timedelta(days=x) for x in range((end_date - today).days + 1) if (today + timedelta(days=x)).weekday() < 5]
+        
+        available_slots = {date.strftime("%Y-%m-%d"): 3 for date in date_range}
+        
+        for appointment in partial_schedule:
+            date = appointment['date']
+            if date in available_slots:
+                available_slots[date] -= 1
+        
+        return {date: slots for date, slots in available_slots.items() if slots > 0}
 
-            prompt = self._create_prompt(chunk, revenue_target - total_revenue, chunk_slots, available_dates)
-            response = self._get_claude_response(prompt)
-            chunk_result = self._parse_response(response)
-
-            if "error" in chunk_result:
-                print(f"Error in chunk {i//chunk_size + 1}: {chunk_result['error']}")
-                continue
-
-            valid_treatments = [t for t in chunk_result['schedule'] if self._is_valid_treatment(t)]
-            schedule.extend(valid_treatments)
-            total_revenue += sum(t.cost for t in valid_treatments)
-
-            # Update available dates
-            used_dates = set(t.date for t in valid_treatments)
-            available_dates = [date for date in available_dates if date not in used_dates]
-
-        revenue_target_met = total_revenue >= revenue_target
-        analysis = f"Scheduled {len(schedule)} appointments. Total revenue: ${total_revenue:.2f}. Target {'met' if revenue_target_met else 'not met'}."
-
-        return {
-            "schedule": [treatment.dict() for treatment in schedule],
-            "total_revenue": total_revenue,
-            "revenue_target_met": revenue_target_met,
-            "analysis": analysis
-        }
-
-    def _is_valid_treatment(self, treatment: ScheduledTreatment) -> bool:
-        """Check if a treatment has all required fields."""
-        return all([treatment.date, treatment.treatment, treatment.patient_id, treatment.cost])
-
-    def _create_prompt(self, treatment_plans: List[Dict], revenue_target: float, num_slots: int, available_dates: List[str]) -> str:
+    def _create_prompt(self, partial_schedule: List[Dict], treatment_plans: List[Dict], revenue_target: float, available_slots: Dict[str, int]) -> str:
         """Create a detailed prompt for the Claude model."""
         formatted_plans = self._format_treatment_plans(treatment_plans)
-        formatted_dates = ", ".join(available_dates)
-        template = """
-        As an AI scheduling assistant specializing in healthcare optimization, your task is to create an optimal schedule for a doctor based on the following parameters:
+        formatted_partial_schedule = self._format_partial_schedule(partial_schedule)
+        formatted_available_slots = self._format_available_slots(available_slots)
+        
+        template = """As an AI scheduling assistant specializing in healthcare optimization, your task is to complete a partial schedule for a doctor based on the following parameters:
+
+        Partial Schedule:
+        {formatted_partial_schedule}
+
+        Available Slots:
+        {formatted_available_slots}
 
         Treatment Plans:
         {formatted_plans}
 
         Revenue Target: ${revenue_target}
-        Number of Available Slots: {num_slots}
-        Available Dates: {formatted_dates}
 
         Objective:
-        Create a schedule that maximizes revenue while meeting or exceeding the revenue target. Consider the following factors:
+        Complete the schedule by filling in the available slots to maximize revenue while meeting or exceeding the revenue target. Consider the following factors:
         1. Prioritize higher-revenue treatments when possible.
         2. Ensure a balanced mix of treatments to avoid overbooking any single type.
         3. If the revenue target can't be met, get as close as possible.
         4. Spread out treatments for each patient (identified by patient_id) so they don't have multiple appointments on the same day.
-        5. Assign each treatment to a specific date from the available dates provided.
+        5. Respect the maximum of 3 appointments per day.
+        6. Only schedule appointments on weekdays (Monday to Friday).
+        7. Use only the dates provided in the Available Slots section.
 
         Instructions:
-        1. Analyze the treatment plans and their costs.
-        2. Create a schedule filling all available slots with treatments, assigning specific dates to each treatment.
+        1. Analyze the partial schedule, available slots, and treatment plans.
+        2. Fill in the available slots with treatments from the treatment plans.
         3. Ensure that no patient has more than one appointment per day.
-        4. Calculate the total revenue for the schedule.
+        4. Calculate the total revenue for the complete schedule.
         5. Determine if the revenue target is met.
 
         {format_instructions}
-
-        Ensure that the "schedule" list contains exactly {num_slots} treatments, each with a unique date from the available dates.
 
         Remember, you are an AI assistant focused on optimizing healthcare schedules. Provide your best solution based on the given constraints and objectives.
         """
@@ -107,10 +90,10 @@ class ScheduleOptimizationAgent:
         prompt = ChatPromptTemplate.from_template(template)
         
         return prompt.format(
+            formatted_partial_schedule=formatted_partial_schedule,
+            formatted_available_slots=formatted_available_slots,
             formatted_plans=formatted_plans,
             revenue_target=revenue_target,
-            num_slots=num_slots,
-            formatted_dates=formatted_dates,
             format_instructions=self.output_parser.get_format_instructions()
         )
 
@@ -130,3 +113,11 @@ class ScheduleOptimizationAgent:
     def _format_treatment_plans(self, treatment_plans: List[Dict]) -> str:
         """Format treatment plans for the prompt."""
         return "\n".join([f"- Patient ID: {plan['id']}, Treatment: {plan['name']}, Cost: ${plan['cost']}" for plan in treatment_plans])
+
+    def _format_partial_schedule(self, partial_schedule: List[Dict]) -> str:
+        """Format partial schedule for the prompt."""
+        return "\n".join([f"- Date: {appt['date']}, Treatment: {appt['treatment']}, Patient ID: {appt['patient_id']}, Cost: ${appt['cost']}" for appt in partial_schedule])
+
+    def _format_available_slots(self, available_slots: Dict[str, int]) -> str:
+        """Format available slots for the prompt."""
+        return "\n".join([f"- Date: {date}, Available Slots: {slots}" for date, slots in available_slots.items()])
