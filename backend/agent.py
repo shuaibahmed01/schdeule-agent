@@ -4,7 +4,7 @@ from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Dict
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from example_input import NEXT_MONTH_WEEKDAYS
 
 class ScheduledTreatment(BaseModel):
