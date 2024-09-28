@@ -20,16 +20,24 @@ class ScheduleOutput(BaseModel):
     analysis: str = Field(description="Brief explanation of the scheduling strategy")
 
 class ScheduleOptimizationAgent:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_retries: int = 3):
         self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", anthropic_api_key=api_key)
         self.output_parser = PydanticOutputParser(pydantic_object=ScheduleOutput)
+        self.max_retries = max_retries
 
     def optimize_schedule(self, partial_schedule: List[Dict], treatment_plans: List[Dict], revenue_target: float) -> Dict:
-        """Optimize the doctor's schedule using Claude-3.5-sonnet."""
+        """Optimize the doctor's schedule using Claude-3.5-sonnet with retry mechanism."""
         available_slots = self._get_available_slots(partial_schedule)
         prompt = self._create_prompt(partial_schedule, treatment_plans, revenue_target, available_slots)
-        response = self._get_claude_response(prompt)
-        return self._parse_response(response)
+        
+        for attempt in range(self.max_retries):
+            try:
+                response = self._get_claude_response(prompt)
+                return self._parse_response(response)
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    return {"error": f"Failed to parse the AI response after {self.max_retries} attempts: {str(e)}"}
+                print(f"Attempt {attempt + 1} failed. Retrying...")
 
     def _get_available_slots(self, partial_schedule: List[Dict]) -> Dict[str, int]:
         """Calculate available slots for each weekday in the next month."""
@@ -108,7 +116,7 @@ class ScheduleOptimizationAgent:
             parsed_output = self.output_parser.parse(response)
             return parsed_output.dict()
         except Exception as e:
-            return {"error": f"Failed to parse the AI response: {str(e)}"}
+            raise Exception(f"Failed to parse the AI response: {str(e)}")
 
     def _format_treatment_plans(self, treatment_plans: List[Dict]) -> str:
         """Format treatment plans for the prompt."""
