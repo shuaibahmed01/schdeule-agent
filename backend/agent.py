@@ -20,7 +20,7 @@ class ScheduleOutput(BaseModel):
     analysis: str = Field(description="Brief explanation of the scheduling strategy")
 
 class ScheduleOptimizationAgent:
-    def __init__(self, api_key: str, max_retries: int = 3):
+    def __init__(self, api_key: str, max_retries: int = 5):
         self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", anthropic_api_key=api_key)
         self.output_parser = PydanticOutputParser(pydantic_object=ScheduleOutput)
         self.max_retries = max_retries
